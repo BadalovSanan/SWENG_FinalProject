@@ -52,3 +52,6 @@ typing-extensions==4.16.0
 typing-inspection==0.4.4
 urllib3==2.8.0
 websockets==16.1.1
+
+# Simple Streamlit presentation layer.
+streamlit>=1.40,<2
