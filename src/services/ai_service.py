@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable
+import json
 import logging
+import re
 import time
 from typing import Any, TypeVar
+from urllib.parse import urlsplit, urlunsplit
 
 import httpx
 from tenacity import AsyncRetrying, RetryCallState, retry_if_exception, stop_after_attempt, wait_exponential
@@ -68,7 +71,12 @@ class AIService:
                 query, max_results=resolved_max_results, client=client
             )
 
-        return await self._run_async("fetch_wikipedia", len(query), operation, self._fetch_timeout)
+        return await self._run_async(
+            "fetch_wikipedia",
+            {"query": query, "max_results": resolved_max_results},
+            operation,
+            self._fetch_timeout,
+        )
 
     async def fetch_arxiv(
         self, query: str, *, max_results: int | None = None, client: Any = None
@@ -82,7 +90,12 @@ class AIService:
 
             return await ai.fetch_arxiv(query, max_results=resolved_max_results, client=client)
 
-        return await self._run_async("fetch_arxiv", len(query), operation, self._fetch_timeout)
+        return await self._run_async(
+            "fetch_arxiv",
+            {"query": query, "max_results": resolved_max_results},
+            operation,
+            self._fetch_timeout,
+        )
 
     async def fetch_web(
         self,
@@ -106,7 +119,16 @@ class AIService:
                 client=client,
             )
 
-        return await self._run_async("fetch_web", len(query), operation, self._fetch_timeout)
+        return await self._run_async(
+            "fetch_web",
+            {
+                "query": query,
+                "max_results": resolved_max_results,
+                "provider_type": type(provider).__name__ if provider is not None else None,
+            },
+            operation,
+            self._fetch_timeout,
+        )
 
     async def synthesize(
         self, question: str, sources: list[Source], *, llm: Any = None
@@ -118,7 +140,17 @@ class AIService:
 
             return await asyncio.to_thread(ai.synthesize, question, sources, llm=llm)
 
-        return await self._run_async("synthesize", len(question), operation, self._synthesis_timeout)
+        return await self._run_async(
+            "synthesize",
+            {
+                "question": question,
+                "source_count": len(sources),
+                "sources": [self._safe_source_payload(source) for source in sources],
+                "llm_type": type(llm).__name__ if llm is not None else None,
+            },
+            operation,
+            self._synthesis_timeout,
+        )
 
     def _resolve_max_results(self, max_results: int | None) -> int:
         """Use the configured result limit when a method receives None."""
@@ -128,7 +160,7 @@ class AIService:
     async def _run_async(
         self,
         operation_name: str,
-        input_length: int,
+        request_payload: dict[str, object],
         operation: Callable[[], Awaitable[_Result]],
         timeout_seconds: float,
     ) -> _Result:
@@ -142,25 +174,62 @@ class AIService:
                 max=self._backoff_max,
             ),
             retry=retry_if_exception(self._is_transient),
-            before_sleep=lambda state: self._log_retry(operation_name, state),
+            before_sleep=lambda state: self._log_retry(
+                operation_name, request_payload, state
+            ),
             reraise=True,
         )
         async for attempt in retrying:
             with attempt:
                 attempt_number = attempt.retry_state.attempt_number
-                started_at = time.perf_counter()
-                logger.info(
-                    "%s attempt=%d input_length=%d",
+                return await self._run_attempt(
                     operation_name,
                     attempt_number,
-                    input_length,
+                    request_payload,
+                    operation,
+                    timeout_seconds,
                 )
-                async with asyncio.timeout(timeout_seconds):
-                    result = await operation()
-                duration = time.perf_counter() - started_at
-                self._log_success(operation_name, attempt_number, duration, result)
-                return result
         raise RuntimeError("Retry loop completed without a result")
+
+    async def _run_attempt(
+        self,
+        operation_name: str,
+        attempt_number: int,
+        request_payload: dict[str, object],
+        operation: Callable[[], Awaitable[_Result]],
+        timeout_seconds: float,
+    ) -> _Result:
+        """Run and log one timed attempt without swallowing its exception."""
+
+        safe_request = self._format_payload(request_payload)
+        logger.info(
+            "%s status=started attempt=%d request=%s",
+            operation_name,
+            attempt_number,
+            self._info_request_payload(request_payload),
+        )
+        logger.debug("%s request_payload=%s", operation_name, safe_request)
+        started_at = time.perf_counter()
+        try:
+            async with asyncio.timeout(timeout_seconds):
+                result = await operation()
+        except Exception as error:
+            duration = time.perf_counter() - started_at
+            logger.info(
+                "%s status=failed attempt=%d duration=%.3fs error_type=%s request=%s",
+                operation_name,
+                attempt_number,
+                duration,
+                type(error).__name__,
+                self._info_request_payload(request_payload),
+            )
+            raise
+
+        duration = time.perf_counter() - started_at
+        self._log_success(
+            operation_name, attempt_number, duration, request_payload, result
+        )
+        return result
 
     @staticmethod
     def _is_transient(error: BaseException) -> bool:
@@ -173,36 +242,148 @@ class AIService:
         return False
 
     @staticmethod
-    def _log_retry(operation_name: str, state: RetryCallState) -> None:
+    def _log_retry(
+        operation_name: str,
+        request_payload: dict[str, object],
+        state: RetryCallState,
+    ) -> None:
         """Log a retry without including request payloads or credentials."""
 
         exception = state.outcome.exception() if state.outcome is not None else None
         logger.warning(
-            "Retrying %s after attempt=%d error=%s",
+            "Retrying %s after attempt=%d error_type=%s request=%s",
             operation_name,
             state.attempt_number,
             type(exception).__name__ if exception is not None else "unknown",
+            AIService._info_request_payload(request_payload),
         )
 
     @staticmethod
     def _log_success(
-        operation_name: str, attempt_number: int, duration: float, result: object
+        operation_name: str,
+        attempt_number: int,
+        duration: float,
+        request_payload: dict[str, object],
+        result: object,
     ) -> None:
         """Log a successful call without putting secrets in normal-level logs."""
 
-        result_count = len(result) if isinstance(result, list) else None
+        result_summary = AIService._result_summary(result)
         logger.info(
-            "%s succeeded attempt=%d duration=%.3fs result_count=%s",
+            "%s status=succeeded attempt=%d duration=%.3fs request=%s result=%s",
             operation_name,
             attempt_number,
             duration,
-            result_count,
+            AIService._info_request_payload(request_payload),
+            AIService._format_payload(result_summary),
         )
+        logger.debug(
+            "%s response_payload=%s",
+            operation_name,
+            AIService._format_payload(AIService._result_payload(result)),
+        )
+
+    @staticmethod
+    def _info_request_payload(request_payload: dict[str, object]) -> str:
+        """Return a concise safe request summary for INFO logs."""
+
+        payload = dict(request_payload)
+        payload.pop("sources", None)
+        return AIService._format_payload(payload)
+
+    @staticmethod
+    def _result_summary(result: object) -> dict[str, object]:
+        """Return concise safe result information for INFO logs."""
+
         if isinstance(result, list):
-            logger.debug(
-                "%s result_sources=%s",
-                operation_name,
-                [(source.title, source.url) for source in result if isinstance(source, Source)],
-            )
-        elif isinstance(result, AnswerWithCitations):
-            logger.debug("%s answer=%s", operation_name, result.answer)
+            sources = [source for source in result if isinstance(source, Source)]
+            return {
+                "result_count": len(result),
+                "origins": [source.origin for source in sources],
+                "titles": [source.title for source in sources],
+            }
+        if isinstance(result, AnswerWithCitations):
+            return {
+                "answer_length": len(result.answer),
+                "citation_count": len(result.citations),
+            }
+        return {"result_type": type(result).__name__}
+
+    @staticmethod
+    def _result_payload(result: object) -> dict[str, object]:
+        """Return the complete safe response payload for DEBUG logs."""
+
+        if isinstance(result, list):
+            return {
+                "sources": [
+                    AIService._safe_source_payload(source)
+                    for source in result
+                    if isinstance(source, Source)
+                ]
+            }
+        if isinstance(result, AnswerWithCitations):
+            return {
+                "question": AIService._redact_secrets(result.question),
+                "answer": AIService._redact_secrets(result.answer),
+                "citations": [
+                    {
+                        "index": citation.index,
+                        "source": AIService._safe_source_payload(citation.source),
+                    }
+                    for citation in result.citations
+                ],
+            }
+        return {"result_type": type(result).__name__}
+
+    @staticmethod
+    def _safe_source_payload(source: Source) -> dict[str, str]:
+        """Serialize source data for logs while removing URL credentials."""
+
+        return {
+            "title": AIService._redact_secrets(source.title),
+            "url": AIService._safe_url(source.url),
+            "snippet": AIService._redact_secrets(source.snippet),
+            "origin": source.origin,
+        }
+
+    @staticmethod
+    def _safe_url(url: str) -> str:
+        """Remove URL credentials, queries, and fragments before logging."""
+
+        parsed = urlsplit(url)
+        hostname = parsed.hostname or ""
+        return urlunsplit((parsed.scheme, hostname, parsed.path, "", ""))
+
+    @staticmethod
+    def _redact_secrets(value: str) -> str:
+        """Redact common credential assignments before they reach a log record."""
+
+        return re.sub(
+            r"(?i)\b(api[_ -]?key|authorization|bearer|token|secret|password)\b"
+            r"\s*([=:])\s*[^\s,;]+",
+            r"\1\2[REDACTED]",
+            value,
+        )
+
+    @staticmethod
+    def _format_payload(payload: dict[str, object]) -> str:
+        """Format a safe structured payload consistently for log output."""
+
+        return json.dumps(
+            AIService._sanitize_payload(payload), ensure_ascii=False, sort_keys=True
+        )
+
+    @staticmethod
+    def _sanitize_payload(value: object) -> object:
+        """Recursively redact strings in a structured log payload."""
+
+        if isinstance(value, str):
+            return AIService._redact_secrets(value)
+        if isinstance(value, dict):
+            return {
+                str(key): AIService._sanitize_payload(item)
+                for key, item in value.items()
+            }
+        if isinstance(value, list):
+            return [AIService._sanitize_payload(item) for item in value]
+        return value

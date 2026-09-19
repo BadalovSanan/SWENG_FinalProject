@@ -78,7 +78,10 @@ async def test_fetch_methods_pass_arguments_and_return_results(
 
 @pytest.mark.asyncio
 async def test_synthesize_passes_llm_and_runs_in_worker_thread(
-    monkeypatch: pytest.MonkeyPatch, service: AIService, sample_sources: list[Source]
+    monkeypatch: pytest.MonkeyPatch,
+    service: AIService,
+    sample_sources: list[Source],
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Synchronous synthesis is moved off the event loop and forwards its LLM."""
 
@@ -92,12 +95,27 @@ async def test_synthesize_passes_llm_and_runs_in_worker_thread(
 
     llm = object()
     monkeypatch.setattr(ai, "synthesize", synthesize)
+    caplog.set_level(logging.DEBUG, logger="src.services.ai_service")
 
     assert await service.synthesize("Q", sample_sources, llm=llm) == expected
     assert seen["question"] == "Q"
     assert seen["sources"] == sample_sources
     assert seen["llm"] is llm
     assert seen["thread"] != main_thread
+    info_messages = [
+        record.getMessage()
+        for record in caplog.records
+        if record.levelno == logging.INFO
+    ]
+    debug_messages = [
+        record.getMessage()
+        for record in caplog.records
+        if record.levelno == logging.DEBUG
+    ]
+    assert any('"question": "Q"' in message for message in info_messages)
+    assert any('"source_count": 2' in message for message in info_messages)
+    assert any(sample_sources[0].snippet in message for message in debug_messages)
+    assert any('"answer": "Answer [1]"' in message for message in debug_messages)
 
 
 @pytest.mark.asyncio
@@ -206,9 +224,24 @@ async def test_logging_records_retry_debug_content_and_no_secret(
 
     await service.fetch_wikipedia("Q")
 
+    info_messages = [
+        record.getMessage()
+        for record in caplog.records
+        if record.levelno == logging.INFO
+    ]
+    debug_messages = [
+        record.getMessage()
+        for record in caplog.records
+        if record.levelno == logging.DEBUG
+    ]
     assert any(record.levelno == logging.INFO for record in caplog.records)
     assert any(record.levelno == logging.WARNING for record in caplog.records)
     assert any(record.levelno == logging.DEBUG for record in caplog.records)
+    assert any('"query": "Q"' in message for message in info_messages)
+    assert any("duration=" in message for message in info_messages)
+    assert any(sample_sources[0].title in message for message in info_messages)
+    assert any(sample_sources[0].snippet in message for message in debug_messages)
+    assert all(sample_sources[0].snippet not in message for message in info_messages)
     assert "sk-test-secret-value" not in caplog.text
 
 
