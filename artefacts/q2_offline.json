@@ -1,0 +1,28 @@
+{
+  "question_id": "q2",
+  "mode": "offline",
+  "demo_note": "Offline demo using canned sources and a templated LLM from demo_ai.py. References may be generic or illustrative; this is not verified live research.",
+  "question": "How do transformer-based language models handle long context windows?",
+  "answer": "Based on the available sources, here is a synthesized answer that draws from multiple references [1], [2]. The sources broadly agree on the main points; differences in emphasis are noted in each reference [1].",
+  "citations": [
+    {
+      "index": 1,
+      "source": {
+        "title": "Transformer (machine learning model)",
+        "url": "https://en.wikipedia.org/wiki/Transformer_(machine_learning)",
+        "snippet": "A transformer is a deep learning model that adopts the mechanism of self-attention.",
+        "origin": "wikipedia"
+      }
+    },
+    {
+      "index": 2,
+      "source": {
+        "title": "Attention Is All You Need",
+        "url": "https://arxiv.org/abs/1706.03762",
+        "snippet": "We propose a new simple network architecture, the Transformer, based solely on attention mechanisms.",
+        "origin": "arxiv"
+      }
+    }
+  ],
+  "degradation_notes": []
+}

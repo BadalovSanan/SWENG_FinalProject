@@ -1,0 +1,19 @@
+{
+  "question_id": "q4",
+  "mode": "offline",
+  "demo_note": "Offline demo using canned sources and a templated LLM from demo_ai.py. References may be generic or illustrative; this is not verified live research.",
+  "question": "What is the current state of fusion energy research?",
+  "answer": "Based on the available sources, here is a synthesized answer that draws from multiple references [1]. The sources broadly agree on the main points; differences in emphasis are noted in each reference [1].",
+  "citations": [
+    {
+      "index": 1,
+      "source": {
+        "title": "Generic reference",
+        "url": "https://example.com/generic",
+        "snippet": "A general overview of: what is the current state of fusion energy research",
+        "origin": "web"
+      }
+    }
+  ],
+  "degradation_notes": []
+}
