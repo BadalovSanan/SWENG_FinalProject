@@ -1,0 +1,43 @@
+# Git metadata and local agent configuration.
+.git
+.gitignore
+.agents
+.codex
+
+# Local environment files and credentials; retain the blank example.
+**/.env
+**/.env.*
+!.env.example
+**/*.pem
+**/*.key
+**/.ssh
+**/.aws
+**/secrets
+
+# Virtual environments, bytecode, and application/tool caches.
+**/.venv
+**/venv
+**/__pycache__
+**/*.py[cod]
+**/.cache
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+
+# Coverage and generated outputs.
+**/.coverage*
+**/htmlcov
+**/coverage.xml
+**/artefacts
+**/artifacts
+**/build
+**/dist
+**/*.egg-info
+
+# Editor and operating-system files.
+**/.idea
+**/.vscode
+**/.DS_Store
+**/__MACOSX
+**/*~
+**/*.swp

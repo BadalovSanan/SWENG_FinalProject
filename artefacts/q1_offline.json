@@ -1,0 +1,37 @@
+{
+  "question_id": "q1",
+  "mode": "offline",
+  "demo_note": "Offline demo using canned sources and a templated LLM from demo_ai.py. References may be generic or illustrative; this is not verified live research.",
+  "question": "What is photosynthesis and what are its main stages?",
+  "answer": "Based on the available sources, here is a synthesized answer that draws from multiple references [1], [2], [3]. The sources broadly agree on the main points; differences in emphasis are noted in each reference [1].",
+  "citations": [
+    {
+      "index": 1,
+      "source": {
+        "title": "Photosynthesis",
+        "url": "https://en.wikipedia.org/wiki/Photosynthesis",
+        "snippet": "Photosynthesis is a process used by plants and other organisms to convert light energy into chemical energy.",
+        "origin": "wikipedia"
+      }
+    },
+    {
+      "index": 2,
+      "source": {
+        "title": "Light-Dependent Reactions of Photosynthesis",
+        "url": "https://arxiv.org/abs/1706.03762",
+        "snippet": "A review of the light-dependent reactions of photosynthesis and their role in oxygen evolution.",
+        "origin": "arxiv"
+      }
+    },
+    {
+      "index": 3,
+      "source": {
+        "title": "How Plants Make Food",
+        "url": "https://example.com/plants",
+        "snippet": "Plants use chlorophyll to absorb sunlight and produce glucose from carbon dioxide and water.",
+        "origin": "web"
+      }
+    }
+  ],
+  "degradation_notes": []
+}
