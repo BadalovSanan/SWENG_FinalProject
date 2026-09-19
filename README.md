@@ -59,6 +59,36 @@ set +a
 Help, tests, and the offline demo do not need provider credentials. Docker's
 `--env-file` supplies the environment inside the container without the export step.
 
+## Streamlit UI
+
+The project includes an optional Streamlit interface. From the repository root
+in a normal Windows PowerShell terminal, create and activate a Python 3.13
+environment and install dependencies:
+
+```powershell
+py -3.13 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+```
+
+If `.env` does not already exist, create it with `Copy-Item .env.example .env`.
+Edit it to configure your LLM provider, model, and required provider credentials
+(see below). Keep comments on separate lines and never commit API keys. The UI
+loads `.env` automatically; existing environment variables take precedence.
+
+Start the UI:
+
+```powershell
+python -m streamlit run ui/app.py
+```
+
+Streamlit prints a local URL, normally [http://localhost:8501](http://localhost:8501).
+Enter a research question, choose Wikipedia, arXiv, and/or Web, click **Research**,
+and view the generated answer and citations. External sources may fail
+independently; the application supports graceful degradation using remaining
+sources when possible. If no sources are available or synthesis fails, the UI
+shows an error.
+
 ## Environment variables
 
 For live synthesis, supply credentials for the chosen LLM provider. Wikipedia and
