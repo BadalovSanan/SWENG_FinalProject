@@ -78,7 +78,7 @@ class ResearchRequest(BaseModel):
         """Build a request, raising a domain error when validation fails."""
 
         try:
-            return cls(question=question, sources=sources)
+            return cls.model_validate({"question": question, "sources": sources})
         except ValidationError as error:
             raise InvalidQuestionError("The research request is invalid.") from error
 
