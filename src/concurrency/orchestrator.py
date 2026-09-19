@@ -31,7 +31,12 @@ class SourceOrchestrator:
 
         selected_sources=source_filter or list(SourceName)
 
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(
+            follow_redirects=True,
+            headers={
+                "User-Agent": "AsyncResearchAssistant/1.0 (educational project)",
+            },
+        ) as client:
             tasks=[
                 self._fetch_source(
                     source,

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from unittest.mock import AsyncMock
 
+import httpx
 import pytest
 
 from ai.schemas import Source
@@ -78,6 +79,41 @@ async def test_all_sources_succeed(
     ai_service.fetch_wikipedia.assert_awaited_once()
     ai_service.fetch_arxiv.assert_awaited_once()
     ai_service.fetch_web.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_source_fetchers_share_redirect_enabled_identified_client(
+    ai_service: AsyncMock,
+    settings: Settings,
+) -> None:
+    """All fetchers share a configured client without making network calls."""
+
+    clients=[]
+
+    async def capture_client(question, *, client):
+        assert isinstance(client,httpx.AsyncClient)
+        assert not client.is_closed
+        assert client.follow_redirects is True
+        request=client.build_request("GET","https://example.com/source")
+        assert request.headers["User-Agent"]==(
+            "AsyncResearchAssistant/1.0 (educational project)"
+        )
+        clients.append(client)
+        return []
+
+    ai_service.fetch_wikipedia.side_effect=capture_client
+    ai_service.fetch_arxiv.side_effect=capture_client
+    ai_service.fetch_web.side_effect=capture_client
+
+    sources,notes=await SourceOrchestrator(
+        ai_service,settings,
+    ).gather_sources("What is photosynthesis?")
+
+    assert sources==[]
+    assert notes==[]
+    assert len(clients)==3
+    assert all(client is clients[0] for client in clients)
+    assert clients[0].is_closed
 
 
 @pytest.mark.asyncio
