@@ -5,7 +5,7 @@ from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -23,6 +23,16 @@ class Settings(BaseSettings):
     cache_ttl_seconds: int = Field(default=86_400, gt=0)
     per_source_timeout_seconds: int = Field(default=10, gt=0)
     max_sources_per_query: int = Field(default=3, gt=0)
+
+    @field_validator("log_level")
+    @classmethod
+    def _validate_log_level(cls, value: str) -> str:
+        """Normalize and validate the configured logging level."""
+
+        normalized_value = value.strip().upper()
+        if normalized_value not in {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}:
+            raise ValueError("log_level must be DEBUG, INFO, WARNING, ERROR, or CRITICAL")
+        return normalized_value
 
 
 @lru_cache

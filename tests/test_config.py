@@ -98,3 +98,20 @@ def test_unrelated_environment_variables_are_ignored(
     settings = get_settings()
 
     assert settings.log_level == "INFO"
+
+
+def test_log_level_is_normalized_to_uppercase() -> None:
+    """Lowercase log levels are normalized for the logging module."""
+
+    from src.config import Settings
+
+    assert Settings(log_level="debug").log_level == "DEBUG"
+
+
+def test_invalid_log_level_is_rejected() -> None:
+    """Only standard logging levels are accepted."""
+
+    from src.config import Settings
+
+    with pytest.raises(ValidationError):
+        Settings(log_level="BANANA")
