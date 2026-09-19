@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable, Callable
 
 import httpx
 
@@ -19,7 +18,9 @@ class SourceOrchestrator:
     def __init__(self,ai_service: AIService,settings: Settings) -> None:
         self._ai_service=ai_service
         self._settings=settings
-        self._semaphore=asyncio.Semaphore(settings.max_sources_per_query)
+        self._semaphore=asyncio.Semaphore(
+            settings.max_sources_per_query
+        )
 
     async def gather_sources(
         self,
@@ -32,7 +33,11 @@ class SourceOrchestrator:
 
         async with httpx.AsyncClient() as client:
             tasks=[
-                self._fetch_source(source,question,client)
+                self._fetch_source(
+                    source,
+                    question,
+                    client,
+                )
                 for source in selected_sources
             ]
 
@@ -44,7 +49,10 @@ class SourceOrchestrator:
         sources: list[Source]=[]
         degradation_notes: list[DegradationNote]=[]
 
-        for source_name,result in zip(selected_sources,results):
+        for source_name,result in zip(
+            selected_sources,
+            results,
+        ):
             if isinstance(result,BaseException):
                 degradation_notes.append(
                     DegradationNote(
@@ -63,37 +71,33 @@ class SourceOrchestrator:
         question: str,
         client: httpx.AsyncClient,
     ) -> list[Source]:
-        """Fetch one source under its own timeout."""
-
-        async with asyncio.timeout(self._settings.per_source_timeout_seconds):
-            if source is SourceName.WIKI:
-                return await self._ai_service.fetch_wikipedia(
-                    question,
-                    client=client,
-                )
-
-            if source is SourceName.ARXIV:
-                return await self._ai_service.fetch_arxiv(
-                    question,
-                    client=client,
-                )
-
-            if source is SourceName.WEB:
-                return await self._ai_service.fetch_web(
-                    question,
-                    client=client,
-                )
-
-        raise ValueError(f"Unsupported source: {source}")
-
-    async def run_bounded(
-        self,
-        operation: Callable[[],Awaitable[object]],
-    ) -> object:
-        """Run one research operation under the shared concurrency bound."""
+        """Fetch one source under the concurrency bound and its own timeout."""
 
         async with self._semaphore:
-            return await operation()
+            async with asyncio.timeout(
+                self._settings.per_source_timeout_seconds
+            ):
+                if source is SourceName.WIKI:
+                    return await self._ai_service.fetch_wikipedia(
+                        question,
+                        client=client,
+                    )
+
+                if source is SourceName.ARXIV:
+                    return await self._ai_service.fetch_arxiv(
+                        question,
+                        client=client,
+                    )
+
+                if source is SourceName.WEB:
+                    return await self._ai_service.fetch_web(
+                        question,
+                        client=client,
+                    )
+
+        raise ValueError(
+            f"Unsupported source: {source}"
+        )
 
     @staticmethod
     def _failure_reason(error: BaseException) -> str:
